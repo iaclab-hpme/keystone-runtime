@@ -181,6 +181,8 @@ page_swap_epm(uintptr_t back_page, uintptr_t epm_page, uintptr_t swap_page) {
   assert(paging_epm_inbounds(epm_page));
   assert(paging_backpage_inbounds(back_page));
 
+  warn("[Eyrie] page_swap_epm: back_page=0x%lx, epm_page=0x%lx, swap_page=0x%lx\n", back_page, epm_page, swap_page);
+
   char buffer[RISCV_PAGE_SIZE] = {};
   if (swap_page) {
     assert(swap_page == back_page);
