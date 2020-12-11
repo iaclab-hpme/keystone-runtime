@@ -28,6 +28,11 @@
 #define SM_MULTIMEM_CALL_GET_SIZE 0x01
 #define SM_MULTIMEM_CALL_GET_ADDR 0x02
 
+#define SM_HPME_PLUGIN_ID   	0x02
+#define SM_HPME_CALL_ENC		0x01
+#define SM_HPME_CALL_DEC		0x02
+#define	SM_HPME_CALL_ENC_SWAP	0x03
+
 void
 sbi_putchar(char c);
 void
@@ -46,5 +51,11 @@ uintptr_t
 sbi_attest_enclave(void* report, void* buf, uintptr_t len);
 uintptr_t
 sbi_get_sealing_key(uintptr_t key_struct, uintptr_t key_ident, uintptr_t len);
+uintptr_t
+sbi_hpme_enc(uintptr_t addr_src, uintptr_t addr_dst, uintptr_t counter, uintptr_t mac_buffer);
+uintptr_t
+sbi_hpme_dec(uintptr_t addr_dst, uintptr_t counter, uintptr_t mac_buffer);
+uintptr_t
+sbi_hpme_enc_swap(uintptr_t addr_src, uintptr_t addr_dst, uintptr_t counter, uintptr_t mac_buffer);
 
 #endif

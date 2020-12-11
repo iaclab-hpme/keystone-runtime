@@ -182,6 +182,7 @@ uintptr_t syscall_brk(void* addr){
 
   // Can we allocate enough phys pages?
   req_page_count = (PAGE_UP(req_break) - current_break) / RISCV_PAGE_SIZE;
+  print_strace("spa_available=%d\n", spa_available());
   if( spa_available() < req_page_count){
     goto done;
   }

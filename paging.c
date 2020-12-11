@@ -254,6 +254,8 @@ void paging_handle_page_fault(struct encl_ctx* ctx)
     goto exit;
   }
 
+  // debug("back_ptr=0x%lx, addr=0x%lx, paging_backing_storage_addr=0x%lx, paging_backing_storage_size=0x%lx, sepc=0x%lx\n", back_ptr, addr,
+  //   paging_backing_storage_addr, paging_backing_storage_size, ctx->regs.sepc);
   assert(back_ptr >= paging_backing_storage_addr);
   assert(back_ptr < paging_backing_storage_addr + paging_backing_storage_size);
 

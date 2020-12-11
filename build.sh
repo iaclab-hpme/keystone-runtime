@@ -14,7 +14,7 @@ PLUGINS[env_setup]="-DENV_SETUP "
 PLUGINS[strace_debug]="-DINTERNAL_STRACE "
 PLUGINS[paging]="-DUSE_PAGING -DUSE_FREEMEM "
 PLUGINS[page_crypto]="-DPAGE_CRYPTO "
-PLUGINS[page_hash]="-DPAGE_HASH "
+PLUGINS[page_hash]="-DUSE_PAGE_HASH "
 PLUGINS[debug]="-DDEBUG "
 #PLUGINS[dynamic_resizing]="-DDYN_ALLOCATION "
 

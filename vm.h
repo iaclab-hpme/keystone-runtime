@@ -22,6 +22,11 @@ static inline uintptr_t kernel_va_to_pa(void* ptr)
   return (uintptr_t) ptr - kernel_offset;
 }
 
+static inline uintptr_t kernel_pa_to_va(void* ptr)
+{
+  return (uintptr_t) ptr + kernel_offset;
+}
+
 uintptr_t load_pa_start;
 static inline uintptr_t __va(uintptr_t pa)
 {
