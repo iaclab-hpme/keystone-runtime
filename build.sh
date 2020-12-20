@@ -16,6 +16,9 @@ PLUGINS[paging]="-DUSE_PAGING -DUSE_FREEMEM "
 PLUGINS[page_crypto]="-DPAGE_CRYPTO "
 PLUGINS[page_hash]="-DUSE_PAGE_HASH "
 PLUGINS[debug]="-DDEBUG "
+PLUGINS[hpme]="-DUSE_HPME "
+PLUGINS[sha3_rocc]="-DUSE_SHA3_ROCC "
+PLUGINS[page_hash_bpt]="-DUSE_PAGE_HASH_BPT "
 #PLUGINS[dynamic_resizing]="-DDYN_ALLOCATION "
 
 OPTIONS_FLAGS=

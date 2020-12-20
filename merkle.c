@@ -6,9 +6,19 @@
 #include <malloc.h>
 #include <string.h>
 
+// #include <sys/mman.h>
+
 #include "paging.h"
-#include "sha256.h"
 #include "vm_defs.h"
+
+#if defined(USE_SHA3_ROCC)
+#include "sha3.h"
+#include "encoding.h"
+#include "compiler.h"
+#include "rocc.h"
+#else
+#include "sha256.h"
+#endif
 
 #ifndef MERK_SILENT
 #define MERK_LOG printf
@@ -109,9 +119,41 @@ static bool
 merk_verify_single_node(
     const merkle_node_t* node, const merkle_node_t* left,
     const merkle_node_t* right) {
-  SHA256_CTX hasher;
-  uint8_t calculated_hash[32];
+  uint8_t calculated_hash[32] __aligned(8);
 
+  #if defined(USE_SHA3_ROCC)
+  uint8_t data_to_be_hashed[sizeof(right->ptr)*2 + 32 * 2] __aligned(8);
+  int data_size = 0;
+
+  if(left) {
+    memcpy(data_to_be_hashed+data_size, (uint8_t*)&left->ptr, sizeof(right->ptr));
+    data_size += sizeof(right->ptr);
+    memcpy(data_to_be_hashed+data_size, left->hash, 32);
+    data_size += 32;
+  }
+
+  if(right) {
+    memcpy(data_to_be_hashed+data_size, (uint8_t*)&right->ptr, sizeof(right->ptr));
+    data_size += sizeof(right->ptr);
+    memcpy(data_to_be_hashed+data_size, right->hash, 32);
+    data_size += 32;
+  }
+
+  if(!left && !right) {
+    return true;
+  }
+
+  asm volatile("fence");
+
+  ROCC_INSTRUCTION_SS(2, data_to_be_hashed, calculated_hash, 0);
+
+  ROCC_INSTRUCTION_S(2, data_size, 1);
+
+  asm volatile("fence" ::: "memory");
+
+  #else
+
+  SHA256_CTX hasher;
   sha256_init(&hasher);
 
   if (left) {
@@ -128,6 +170,8 @@ merk_verify_single_node(
   }
 
   sha256_final(&hasher, calculated_hash);
+
+  #endif
   return memcmp(calculated_hash, node->hash, 32) == 0;
 }
 
@@ -135,6 +179,39 @@ static void
 merk_hash_single_node(
     merkle_node_t* node, const merkle_node_t* left,
     const merkle_node_t* right) {
+
+  #if defined(USE_SHA3_ROCC)
+
+  uint8_t calculated_hash[32] __aligned(8);
+  uint8_t data_to_be_hashed[sizeof(right->ptr)*2 + 32 * 2] __aligned(8);
+  int data_size = 0;
+
+  if(left) {
+    memcpy(data_to_be_hashed+data_size, (uint8_t*)&left->ptr, sizeof(right->ptr));
+    data_size += sizeof(right->ptr);
+    memcpy(data_to_be_hashed+data_size, left->hash, 32);
+    data_size += 32;
+  }
+
+  if(right) {
+    memcpy(data_to_be_hashed+data_size, (uint8_t*)&right->ptr, sizeof(right->ptr));
+    data_size += sizeof(right->ptr);
+    memcpy(data_to_be_hashed+data_size, right->hash, 32);
+    data_size += 32;
+  }
+
+  asm volatile("fence");
+
+  ROCC_INSTRUCTION_SS(2, data_to_be_hashed, calculated_hash, 0);
+
+  ROCC_INSTRUCTION_S(2, data_size, 1);
+
+  asm volatile("fence" ::: "memory");
+
+  memcpy(node->hash, calculated_hash, 256/8);
+
+  #else
+
   SHA256_CTX hasher;
   sha256_init(&hasher);
   if (left) {
@@ -146,13 +223,18 @@ merk_hash_single_node(
     sha256_update(&hasher, right->hash, 32);
   }
   sha256_final(&hasher, node->hash);
+
+  #endif
 }
 
 bool
 merk_verify(
     volatile merkle_node_t* root, uintptr_t key, const uint8_t hash[32]) {
   merkle_node_t node = *root;
-  if (!root->right) return false;
+  if (!root->right) {
+    MERK_LOG("Root node doesn't have right child\n");
+    return false;
+  }
 
   merkle_node_t left;
   merkle_node_t right = *root->right;
@@ -168,6 +250,10 @@ merk_verify(
   for (int i = 0;; i++) {
     // node is a leaf, so return its hash check
     if (!node.left && !node.right) {
+      int diff = memcmp(hash, node.hash, 32);
+      if(diff){
+        MERK_LOG("Compare failed, addr=0x%lx, hash=0x%lx_%lx, node.hash=0x%lx_%lx\n", key, *(uint64_t*)hash, *((uint64_t*)hash+1), *(uint64_t*)(node.hash), *((uint64_t*)(node.hash)+1));
+      }
       return memcmp(hash, node.hash, 32) == 0;
     }
 

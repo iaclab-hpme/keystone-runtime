@@ -1,4 +1,4 @@
-#ifdef USE_PAGE_HASH
+#if defined (USE_PAGE_HASH) || (defined (USE_PAGE_HASH_BPT) && !defined(USE_SHA3_ROCC))
 
 /*********************************************************************
 * Filename:   sha256.c

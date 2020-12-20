@@ -7,6 +7,7 @@
 
 #include "aes.h"
 #include "merkle.h"
+#include "bpt_merkle.h"
 #include "paging.h"
 #include "sbi.h"
 #include "sha256.h"
@@ -129,53 +130,61 @@ pswap_establish_boot_key(void) {
 static merkle_node_t paging_merk_root = {};
 #endif
 
-// static void
-// pswap_encrypt(const void* addr, void* dst, uint64_t pageout_ctr) {
-//   size_t len = RISCV_PAGE_SIZE;
+#ifdef USE_PAGE_HASH_BPT
+static bpt_merkle_node_t paging_merk_root = {
+  .is_leaf = true
+};
+#endif
 
-// #ifdef USE_PAGE_CRYPTO
-//   pswap_establish_boot_key();
-//   uint8_t iv[32] = {0};
-//   WORD key_sched[80];
-//   aes_key_setup(pswap_boot_key, key_sched, 256);
+#ifndef USE_PAGE_HASH_BPT
+static void
+pswap_encrypt(const void* addr, void* dst, uint64_t pageout_ctr) {
+  size_t len = RISCV_PAGE_SIZE;
 
-//   memcpy(iv + 8, &pageout_ctr, 8);
+#ifdef USE_PAGE_CRYPTO
+  pswap_establish_boot_key();
+  uint8_t iv[32] = {0};
+  WORD key_sched[80];
+  aes_key_setup(pswap_boot_key, key_sched, 256);
 
-//   aes_encrypt_ctr((uint8_t*)addr, len, (uint8_t*)dst, key_sched, 256, iv);
-// #else
-//   memcpy(dst, addr, len);
-// #endif
-// }
+  memcpy(iv + 8, &pageout_ctr, 8);
 
-// static void
-// pswap_decrypt(const void* addr, void* dst, uint64_t pageout_ctr) {
-//   size_t len = RISCV_PAGE_SIZE;
+  aes_encrypt_ctr((uint8_t*)addr, len, (uint8_t*)dst, key_sched, 256, iv);
+#else
+  memcpy(dst, addr, len);
+#endif
+}
 
-// #ifdef USE_PAGE_CRYPTO
-//   pswap_establish_boot_key();
-//   uint8_t iv[32] = {0};
-//   WORD key_sched[80];
-//   aes_key_setup(pswap_boot_key, key_sched, 256);
+static void
+pswap_decrypt(const void* addr, void* dst, uint64_t pageout_ctr) {
+  size_t len = RISCV_PAGE_SIZE;
 
-//   memcpy(iv + 8, &pageout_ctr, 8);
+#ifdef USE_PAGE_CRYPTO
+  pswap_establish_boot_key();
+  uint8_t iv[32] = {0};
+  WORD key_sched[80];
+  aes_key_setup(pswap_boot_key, key_sched, 256);
 
-//   aes_decrypt_ctr((uint8_t*)addr, len, (uint8_t*)dst, key_sched, 256, iv);
-// #else
-//   memcpy(dst, addr, len);
-// #endif
-// }
+  memcpy(iv + 8, &pageout_ctr, 8);
 
-// static void
-// pswap_hash(uint8_t* hash, void* page_addr, uint64_t pageout_ctr) {
-// #ifdef USE_PAGE_HASH
-//   SHA256_CTX hasher;
+  aes_decrypt_ctr((uint8_t*)addr, len, (uint8_t*)dst, key_sched, 256, iv);
+#else
+  memcpy(dst, addr, len);
+#endif
+}
 
-//   sha256_init(&hasher);
-//   sha256_update(&hasher, page_addr, RISCV_PAGE_SIZE);
-//   sha256_update(&hasher, (uint8_t*)&pageout_ctr, sizeof(pageout_ctr));
-//   sha256_final(&hasher, hash);
-// #endif
-// }
+static void
+pswap_hash(uint8_t* hash, void* page_addr, uint64_t pageout_ctr) {
+#ifdef USE_PAGE_HASH
+  SHA256_CTX hasher;
+
+  sha256_init(&hasher);
+  sha256_update(&hasher, page_addr, RISCV_PAGE_SIZE);
+  sha256_update(&hasher, (uint8_t*)&pageout_ctr, sizeof(pageout_ctr));
+  sha256_final(&hasher, hash);
+#endif
+}
+#endif // ndef USE_PAGE_HASH_BPT
 
 /* evict a page from EPM and store it to the backing storage
  * back_page (PA1) <-- epm_page (PA2) <-- swap_page (PA1)
@@ -194,8 +203,10 @@ page_swap_epm(uintptr_t back_page, uintptr_t epm_page, uintptr_t swap_page) {
   uint64_t new_pageout_ctr = old_pageout_ctr + 1;
 
   uint8_t new_hash[32] = {0};
-  // pswap_hash(new_hash, (void*)epm_page, new_pageout_ctr);
-  // pswap_encrypt((void*)epm_page, (void*)back_page, new_pageout_ctr);
+  #ifndef USE_HPME
+  pswap_hash(new_hash, (void*)epm_page, new_pageout_ctr);
+  pswap_encrypt((void*)epm_page, (void*)back_page, new_pageout_ctr);
+  #else
   if(swap_page){
     assert(swap_page == back_page);
     sbi_hpme_enc_swap(__pa(epm_page), __paging_pa(back_page), new_pageout_ctr, kernel_va_to_pa(new_hash));
@@ -208,22 +219,35 @@ page_swap_epm(uintptr_t back_page, uintptr_t epm_page, uintptr_t swap_page) {
 
   if (swap_page) {
     uint8_t old_hash[32] = {0};
-    // pswap_decrypt((void*)buffer, (void*)epm_page, old_pageout_ctr);
-    // pswap_hash(old_hash, (void*)epm_page, old_pageout_ctr);
+    #ifndef USE_HPME
+    pswap_decrypt((void*)buffer, (void*)epm_page, old_pageout_ctr);
+    pswap_hash(old_hash, (void*)epm_page, old_pageout_ctr);
+    #else
     sbi_hpme_dec(__pa(epm_page), old_pageout_ctr, kernel_va_to_pa(old_hash));
+    #endif
     debug("[runtime] sbi_hpme_dec done\n");
+
+  #endif
 
 #ifdef USE_PAGE_HASH
     bool ok = merk_verify(&paging_merk_root, back_page, old_hash);
     assert(ok);
     debug("[runtime] merk_verify passed\n");
+#elif defined USE_PAGE_HASH_BPT
+    // bpt_merk_travel(&paging_merk_root);
+    bool ok = bpt_merk_verify(&paging_merk_root, back_page, old_hash);
+    assert(ok);
+    debug("[runtime] bpt_merk_verify passed\n");
 #endif
-    debug("[runtime]old_hash: 0x%x, new_hash: 0x%x\n", old_hash[0], new_hash[0]);
   }
 
 #ifdef USE_PAGE_HASH
   merk_insert(&paging_merk_root, back_page, new_hash);
+#elif defined USE_PAGE_HASH_BPT
+  bpt_merk_insert(&paging_merk_root, back_page, new_hash);
+  // bpt_merk_travel(&paging_merk_root);
 #endif
+
 
   *pageout_ctr = new_pageout_ctr;
 
